@@ -32,6 +32,8 @@ function verifyTokenAndAdmin(req, res, next) {
 
 function verifyTokenOnlyUser(req, res, next) {
     vertifyToken(req, res, () => {
+        console.log(req.user.id)
+        console.log(req.params.id)
         if (req.user.id===req.params.id) {
             next();
         } else {

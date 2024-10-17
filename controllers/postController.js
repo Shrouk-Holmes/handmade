@@ -30,7 +30,6 @@ module.exports.createPostCtrl=asyncHandler (async(req,res)=>{
 //   post creation
     const imagePath = path.join(__dirname, `../images/${req.file.filename}`)
     const result = await cloudinaryUploadImage(imagePath)
-    
     const post = await Post.create({
         title: req.body.title,
         description: req.body.description,
@@ -45,7 +44,7 @@ module.exports.createPostCtrl=asyncHandler (async(req,res)=>{
     });
     const user = await User.findById(req.user.id);
     if (!user.jobs.includes(job.title)) {
-        user.jobs.push(job.title);  // Add job title to user's jobs array
+        user.jobs.push(job.title);  
         await user.save();
     }
     res.status(200).json(post);
@@ -71,14 +70,15 @@ module.exports.createPostCtrl=asyncHandler (async(req,res)=>{
         if (!foundJob) {
             return res.status(404).json({ message: "Job not found" });
         }
-        // Filter posts by job ID
         posts = await Post.find({ job: foundJob._id })
             .sort({ createdAt: -1 })
-            .populate("user", ["-password"]);
+            .populate("user", ["-password"])
+            .populate("job", "title");
 
     } else {
         posts = await Post.find({}, { "__v": false }).limit(limit).skip(skip) .sort({ createdAt: -1 })
-        .populate("user", ["-password"]);
+        .populate("user", ["-password"])
+        .populate("job", "title");;
 
     }
 
@@ -105,7 +105,8 @@ module.exports.createPostCtrl=asyncHandler (async(req,res)=>{
  module.exports.getSinglePostCtrl = asyncHandler(async (req, res) => {
     const post = await Post.findById(req.params.id)
     .populate("user", ["-password"])
-    .populate("comments");
+    .populate("comments")
+    .populate("job", "title");;
     if (!post) {
         return res.status(404).json({ message: "post not found" })
     }
@@ -120,38 +121,55 @@ module.exports.createPostCtrl=asyncHandler (async(req,res)=>{
 * @method PUT
 * @access private (only owner of the post)
 -----------------------------------*/
-
 module.exports.updatePostCtrl = asyncHandler(async (req, res) => {
     const { error } = validateUpdatePost(req.body);
     if (error) {
         return res.status(400).json({ message: error.details[0].message });
     }
 
-
     const post = await Post.findById(req.params.id);
     if (!post) {
-        return res.status(404).json({ message: "post not found" });
+        return res.status(404).json({ message: "Post not found" });
     }
-
+    const job = await Job.findOne({ title: req.body.job });
+    if (!job) {
+        return res.status(404).json({ message: 'Job not found. Please select a valid job.' });
+    }
     if (req.user.id !== post.user.toString()) {
-        return res.status(404).json({ message: "access denied" });
+        return res.status(403).json({ message: "Access denied" });
     }
 
+    const oldJob = await Job.findById(post.job);
+    const newJob = await Job.findOne({ title: req.body.job });
+    const user = await User.findById(post.user); 
 
-
+    // Update the post
     const updatedPost = await Post.findByIdAndUpdate(req.params.id, {
         $set: {
             title: req.body.title,
             description: req.body.description,
-            job: req.body.job
+            job: newJob ? newJob._id : post.job 
         }
-    }, { new: true }).populate("user", ["-password"])
+    }, { new: true }).populate("user", ["-password"]);
 
+
+    if (oldJob && newJob && oldJob._id.toString() !== newJob._id.toString()) {
+        const otherPostsWithOldJob = await Post.find({ user: post.user, job: oldJob._id, _id: { $ne: post._id } });
+        if (otherPostsWithOldJob.length === 0) {
+            if (user.jobs.includes(oldJob.title)) {
+                user.jobs.pull(oldJob.title);
+                await user.save();
+            }
+        }
+    }
+
+    if (newJob && !user.jobs.includes(newJob.title)) {
+        user.jobs.push(newJob.title);
+        await user.save();
+    }
 
     res.status(200).json(updatedPost);
-
-})
-
+});
 
 
 
@@ -167,8 +185,6 @@ module.exports.updatePostImageCtrl = asyncHandler(async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ message: "no image provided" });
     }
-
-
     const post = await Post.findById(req.params.id);
     if (!post) {
         return res.status(404).json({ message: "post not found" });
@@ -177,10 +193,6 @@ module.exports.updatePostImageCtrl = asyncHandler(async (req, res) => {
     if (req.user.id !== post.user.toString()) {
         return res.status(404).json({ message: "access denied" });
     }
-
-
-
-    // await cloudinaryRemoveImage(post.image.publicId)
 
     if (post.image && post.image.publicId) {
         try {
@@ -212,25 +224,35 @@ module.exports.updatePostImageCtrl = asyncHandler(async (req, res) => {
  * @method Delete
  * @access private (only Admin or owner of the post)
  -----------------------------------*/
-
-
  module.exports.DeletePostCtrl = asyncHandler(async (req, res) => {
-    const post = await Post.findById(req.params.id);
+    const post = await Post.findById(req.params.id).populate('job', 'title');
     if (!post) {
-        return res.status(404).json({ message: "post not found" })
+        return res.status(404).json({ message: "Post not found" });
     }
 
-    if (req.user.IsAdmin || req.user.id === post.user.toString()) {
+    if (req.user.isAdmin || req.user.id === post.user.toString()) {
         await Post.findByIdAndDelete(req.params.id);
-        await cloudinaryRemoveImage(post.image.publicId);
+        if (post.image && post.image.publicId) {
+            await cloudinaryRemoveImage(post.image.publicId);
+        }
+        await Comment.deleteMany({ postId: post._id });
 
-        await Comment.deleteMany({postId:post._id})
-       
-        res.status(200).json({ message: "post deleted successfully", postId: post._id });
+        const otherPosts = await Post.find({ user: post.user, job: post.job._id });
 
+        if (otherPosts.length === 0) {
+            const user = await User.findById(post.user); 
+            user.jobs.pull(post.job.title); 
+
+            try {
+                await user.save(); 
+            } catch (error) {
+                console.error("Error saving user:", error);
+                return res.status(500).json({ message: "Error updating user jobs" });
+            }
+        }
+
+        res.status(200).json({ message: "Post deleted successfully", postId: post._id });
+    } else {
+        res.status(403).json({ message: "Access denied" });
     }
-    else {
-        res.status(404).json({ message: "access denied" });
-
-    }
-})
+});

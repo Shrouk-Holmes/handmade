@@ -9,18 +9,23 @@ const {Job, validateCreateJob} = require("../models/jobModel")
 * @access private (only admin)
 -----------------------------------*/
 
-module.exports.createJobCtrl= asyncHandler(async(req,res)=>{
-    const {error} = validateCreateJob (req.body) 
+module.exports.createJobCtrl = asyncHandler(async (req, res) => {
+    const { error } = validateCreateJob(req.body);
     if (error) {
         return res.status(404).json({ message: error.details[0].message });
     }
 
-    const job = await Job.create({
-        title: req.body.title,
-    })
-    res.status(200).json(job)
-})
+    let job = await Job.findOne({ title: req.body.title });
+    if (job) {
+        return res.status(400).json({ message: 'This job already exists' });
+    }
 
+    job = await Job.create({
+        title: req.body.title,
+    });
+
+    res.status(200).json(job);
+});
 /**---------------------------------
 * @desc get all jobs
 * @route api/job

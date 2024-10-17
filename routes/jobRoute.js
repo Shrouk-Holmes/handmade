@@ -1,13 +1,14 @@
 const router = require('express').Router();
 const { createJobCtrl, getAllJobsCtrl, updateJobCtrl, deleteJobCtrl } = require('../controllers/jobController');
 const validateObjectId = require('../middlewares/validateObjectId');
+const { verifyTokenAndAdmin } = require('../middlewares/vertifyToken');
 
 router.route("/")
- .post(createJobCtrl)
+ .post(verifyTokenAndAdmin,createJobCtrl)
  .get(getAllJobsCtrl);
 
  router.route("/:id")
- .put(validateObjectId,updateJobCtrl)
- .delete(validateObjectId,deleteJobCtrl);
+ .put(verifyTokenAndAdmin,validateObjectId,updateJobCtrl)
+ .delete(verifyTokenAndAdmin,validateObjectId,deleteJobCtrl);
 
  module.exports = router;

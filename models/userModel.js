@@ -29,7 +29,7 @@ const UserSchema = new mongoose.Schema({
     },
     phoneNumber: {
         type: String,
-        // required: true,
+        required: true,
         trim: true,
         minlength: 11,
         maxlength: 11,
@@ -69,8 +69,15 @@ const UserSchema = new mongoose.Schema({
     },
 }, {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
 });
 
+UserSchema.virtual("posts", {
+    ref: 'Post',
+    foreignField: 'user',
+    localField: '_id',
+})
 
 
 UserSchema.methods.generateAuthToken = function () {
@@ -105,6 +112,8 @@ function validateLoginUser(obj) {
     });
     return schema.validate(obj);
 }
+
+
 function validateResetPassword(obj) {
     const schema = Joi.object({
         email: Joi.string().trim().required().email(),
@@ -129,5 +138,5 @@ module.exports = {
     validateLoginUser,
     validateUpdateUser,
     validateResetPassword,
-    
+
 }

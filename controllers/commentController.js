@@ -35,9 +35,9 @@ module.exports.CreateCommentCtrl = asyncHandler(async (req, res) => {
 * @access private (only admin )
 -----------------------------------*/
 module.exports.getAllCommentCtrl = asyncHandler(async (req, res) => {
-    const comments = await Comment.find().populate("user");
+    const comments = await Comment.find({ user: req.user.id }).populate("user", "-password");
     res.status(200).json(comments);
-})
+}) 
 
 /**---------------------------------
 * @desc delete comment
